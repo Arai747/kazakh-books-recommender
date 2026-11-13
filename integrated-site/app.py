@@ -65,7 +65,7 @@ def load_books():
 
 @st.cache_resource
 def load_model(_books):
-    return BookRecommender(_books, n_clusters=8)
+    return BookRecommender(_books, kind="char")
 
 
 books = load_books()
