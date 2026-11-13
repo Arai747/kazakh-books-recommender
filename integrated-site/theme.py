@@ -1,5 +1,7 @@
 """BookRec дизайны: CSS, SVG-безендіру және HTML бөлшектері (Streamlit-ке тәуелсіз)."""
 import html
+import base64
+from pathlib import Path
 from urllib.parse import quote
 
 GENRE_NAMES = {
@@ -195,3 +197,19 @@ FOOTER_HTML = (
     '<small>ҚАЗАҚ ӘДЕБИЕТІН БІРГЕ ЗЕРТТЕЙІК</small></div><div class="l"></div>'
     '<div class="r">© 2026 BookRec. Оқу жобасы: деректер мен оқырмандар синтетикалық.</div></div>'
 )
+
+
+def cover_image_html(path: Path, title: str, author: str, genre: str) -> str:
+    """Show the generated SVG cover, falling back to the existing design."""
+    try:
+        svg = Path(path).read_bytes()
+        encoded = base64.b64encode(svg).decode("ascii")
+        return (
+            '<div class="cover cover-image" style="padding:0">'
+            f'<img src="data:image/svg+xml;base64,{encoded}" '
+            f'alt="{esc(title)} — {esc(author)}" '
+            'style="display:block;width:100%;height:100%;object-fit:cover">'
+            '</div>'
+        )
+    except OSError:
+        return cover_html(title, author, genre)

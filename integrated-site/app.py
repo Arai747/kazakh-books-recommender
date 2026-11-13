@@ -1,10 +1,9 @@
-
 """BookRec — қазақ әдебиетіне арналған Streamlit сайты."""
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
+from access_code import generate_access_code, validate_access_code, normalize_access_code
 
 import pandas as pd
 import streamlit as st
@@ -14,6 +13,8 @@ from database import (
     add_to_reading_list,
     remove_from_reading_list,
     get_reading_list,
+    register_access_code,
+    access_code_exists,
 )
 from recommender import BookRecommender
 from theme import (
@@ -23,6 +24,7 @@ from theme import (
     HERO_HTML,
     YEARS,
     cover_html,
+    cover_image_html,
     esc,
     logo_html,
 )
@@ -47,7 +49,7 @@ def load_books():
     for col in ["title", "author", "genre", "description"]:
         if col not in df.columns:
             df[col] = ""
-        df[col] = df[col].fillna("").astype(str)
+        df[col] = df[col].astype("string").fillna("")
 
     if "genre_group" not in df.columns:
         df["genre_group"] = df["genre"]
@@ -84,14 +86,46 @@ BOOK_OPTIONS = {
 PER_PAGE = 12
 
 
-# -------------------- SQLITE --------------------
+# -------------------- ПАЙДАЛАНУШЫ ЖӘНЕ ДЕРЕКТЕР БАЗАСЫ --------------------
 
 init_db()
 
 st.session_state.setdefault("page", "home")
 
 if "user_id" not in st.session_state:
-    st.session_state["user_id"] = str(uuid.uuid4())
+    # Жаңа сеансқа бірегей құпия код беріп, оны базаға тіркейміз.
+    new_code = generate_access_code()
+    register_access_code(new_code)
+    st.session_state["user_id"] = new_code
+
+
+def access_code_panel():
+    """Кодты көрсету және сақталған тізімді басқа сеанста ашу."""
+    with st.container():
+        st.subheader("🔑 Менің жеке кодым")
+        st.caption("Таңдаулы кітаптарды басқа құрылғыда ашу үшін кодты сақтаңыз. Оны ешкімге бермеңіз.")
+        st.code(st.session_state["user_id"], language=None)
+        with st.form("restore_access_code", clear_on_submit=True):
+            entered_code = st.text_input(
+                "Бұрынғы жеке кодты енгізіңіз",
+                type="password",
+                placeholder="32 таңбалы код",
+            )
+            submitted = st.form_submit_button("Тізімімді қалпына келтіру")
+
+        if submitted:
+            if not validate_access_code(entered_code):
+                st.error("Код форматы дұрыс емес. 32 таңбалы код енгізіңіз.")
+            else:
+                code = normalize_access_code(entered_code)
+                if not access_code_exists(code):
+                    st.error("Мұндай код деректер базасында тіркелмеген.")
+                else:
+                    st.session_state["user_id"] = code
+                    st.success("Тізіміңіз ашылды!")
+                    st.rerun()
+
+
 
 
 def refresh_favs():
@@ -181,6 +215,8 @@ def header():
                     ),
                 ]
 
+                items.append(("access", "🔑 Менің жеке кодым", ":material/key:"))
+
                 for key, label, icon in items:
                     st.button(
                         label,
@@ -226,7 +262,8 @@ def card(row, prefix, similarity=None):
 
         with c1:
             st.markdown(
-                cover_html(
+                cover_image_html(
+                    BASE_DIR / "covers" / f"{bid}.svg",
                     row.title,
                     row.author,
                     row.genre,
@@ -600,6 +637,7 @@ pages = {
     "books": page_books,
     "recs": page_recs,
     "favs": page_favs,
+    "access": access_code_panel,
 }
 
 pages.get(
