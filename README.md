@@ -13,7 +13,7 @@ BookRec қазақ әдебиетіндегі кітаптарды іздеп, �
 - `integrated-site/database.py` — SQLite; `DATABASE_URL` берілсе PostgreSQL.
 - `integrated-site/access_code.py` — жеке кодпен таңдаулыларды қалпына келтіру логикасы.
 - `integrated-site/data/books.csv` — сайт қолданатын 270 кітаптық каталог.
-- `integrated-site/covers/` — 270 SVG мұқаба.
+- `integrated-site/covers/` — 270 иллюстрациялық WebP мұқаба; ескі SVG нұсқалары да сақталған.
 - `integrated-site/theme.py` — сайт стилі.
 - `books.csv`, `source_catalog.xlsx`, `build_catalog.py` — түбірдегі дерек файлдары және өңдеу скрипті.
 - `synthetic_ratings.csv` — синтетикалық бағалар, нақты адамдардың деректері емес.
@@ -21,7 +21,7 @@ BookRec қазақ әдебиетіндегі кітаптарды іздеп, �
 - `test_bookrec_integration.py` — нақты сайттың ұсыныс модулі мен уақытша SQLite базасын тексеру.
 - `PROJECT_REPORT.md`, `TEST_RESULTS.md`, `CONTRIBUTIONS.md`, `AI_DECLARATION.md`, `PRESENTATION_OUTLINE.md` — тапсыру материалдарының толтырылатын нұсқалары.
 
-**Ескерту:** түбірдегі `app.py` — ескі интерфейс нұсқасы; толық Backend және жеке код бар сайт `integrated-site/app.py` арқылы іске қосылады. Екі нұсқаны шатастырмаңыз.
+**Streamlit кіріс нүктесі:** түбірдегі `app.py` толық `integrated-site/app.py` сайтын іске қосады. `streamlit run app.py` қолданыңыз. SQLite, жеке код, сақталған таңдаулар, ML ұсыныстары, My Reading List мәртебелері және 270 иллюстрациялық мұқаба қосылған. Жариялау: [STREAMLIT_DEPLOY.md](STREAMLIT_DEPLOY.md); 4-қатысушының функциялары: [BACKEND_PARTICIPANT_4.md](BACKEND_PARTICIPANT_4.md).
 
 ## Орнату және іске қосу
 
@@ -31,12 +31,12 @@ Python 3.10+ ұсынылады.
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
-python3 -m streamlit run integrated-site/app.py
+python3 -m streamlit run app.py
 ```
 
 Streamlit әдетте `http://localhost:8501` ашады; порт бос болмаса басқа портты қолданады. Интернетке тұрақты жариялау бұл локальді команданың бөлігі емес.
 
-SQLite әдепкіде `integrated-site/bookrec.db` файлын қолданады. PostgreSQL үшін құпия `DATABASE_URL` айнымалысын ортада немесе Streamlit Secrets ішінде орнатыңыз. **Құпия кілттерді GitHub-қа жүктемеңіз.** Supabase-ке нақты қосылу және басқа браузерден таңдаулыларды қалпына келтіру бөлек тексеріледі.
+SQLite әдепкіде `integrated-site/bookrec.db` файлын қолданады. PostgreSQL үшін құпия `DATABASE_URL` айнымалысын ортада немесе Streamlit Secrets ішінде орнатыңыз. **Құпия кілттерді GitHub-қа жүктемеңіз.** Streamlit Community Cloud жергілікті SQLite файлының сақталуына кепілдік бермейді; тұрақты cloud сақтау үшін PostgreSQL нұсқасын қолданыңыз. Supabase-ке нақты қосылу және басқа браузерден таңдаулыларды қалпына келтіру бөлек тексеріледі.
 
 ## Әдіс
 

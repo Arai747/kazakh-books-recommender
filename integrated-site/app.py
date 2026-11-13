@@ -15,8 +15,12 @@ from database import (
     get_reading_list,
     register_access_code,
     access_code_exists,
+    get_reading_entries,
+    set_reading_status,
+    READING_STATUSES,
 )
 from recommender import BookRecommender
+from service import RecommendationService
 from theme import (
     CSS,
     FOOTER_HTML,
@@ -64,12 +68,13 @@ def load_books():
 
 
 @st.cache_resource
-def load_model(_books):
-    return BookRecommender(_books, kind="char")
+def load_model(catalogue):
+    return BookRecommender(catalogue, kind="char")
 
 
 books = load_books()
 rec = load_model(books)
+service = RecommendationService(books, rec)
 
 by_id = books.set_index("book_id")
 
@@ -159,6 +164,7 @@ def toggle_fav(book_id):
 def show_book(bid):
     r = by_id.loc[bid]
 
+    st.markdown(cover_image_html(BASE_DIR / "covers" / f"{bid}.webp", r.title, r.author, r.genre), unsafe_allow_html=True)
     st.subheader(r.title)
     st.caption(f"{r.author} · {r.genre}")
 
@@ -210,7 +216,7 @@ def header():
                     ("recs", "Ұсыныстар", ":material/auto_awesome:"),
                     (
                         "favs",
-                        f"Таңдаулылар ({len(st.session_state['favs'])})",
+                        f"My Reading List ({len(st.session_state['favs'])})",
                         ":material/favorite:",
                     ),
                 ]
@@ -263,7 +269,7 @@ def card(row, prefix, similarity=None):
         with c1:
             st.markdown(
                 cover_image_html(
-                    BASE_DIR / "covers" / f"{bid}.svg",
+                    BASE_DIR / "covers" / f"{bid}.webp",
                     row.title,
                     row.author,
                     row.genre,
@@ -539,93 +545,78 @@ def page_recs():
         "Сізге арналған ұсыныстар",
     )
 
-    default = [
-        bid
-        for bid in st.session_state["favs"]
-        if bid in BOOK_OPTIONS
-    ]
+    user_id = st.session_state["user_id"]
+    selected_key = f"liked_books_{user_id}"
+    if selected_key not in st.session_state:
+        st.session_state[selected_key] = service.saved_likes(user_id)
 
-    liked_ids = st.multiselect(
+    def save_likes():
+        service.save_likes(user_id, st.session_state[selected_key])
+
+    st.multiselect(
         "Маған мына кітаптар ұнады",
         options=list(BOOK_OPTIONS),
-        default=default,
+        key=selected_key,
         format_func=lambda bid: BOOK_OPTIONS[bid],
         placeholder="Кітап таңдаңыз...",
+        on_change=save_likes,
     )
-
-    k = st.slider(
-        "Ұсыныс саны",
-        1,
-        8,
-        5,
-    )
-
-    if not liked_ids:
-        st.info(
-            "Кемінде бір кітапты таңдаңыз немесе "
-            "«Таңдаулылар» тізіміне кітап қосыңыз."
-        )
+    k = st.slider("Ұсыныс саны", 1, 12, 5)
+    if not st.session_state[selected_key]:
+        st.info("Кемінде бір ұнаған кітабыңызды таңдаңыз. Таңдау жеке кодыңызбен бірге сақталады.")
         return
-
-    out = rec.recommend(
-        liked_ids,
-        k=k,
-    )
-
-    sims = dict(
-        zip(out.book_id, out.similarity)
-    )
-
+    out = service.recommend_for_user(user_id, k=k)
+    if out.empty:
+        st.info("Қалған кітаптар табылмады. Таңдауыңызды өзгертіп көріңіз.")
+        return
+    st.caption("Ұсыныстар атау, автор, жанр және сипаттаманың ұқсастығына негізделеді. Тізіміңіздегі кітаптар қайталанбайды.")
+    sims = dict(zip(out.book_id, out.similarity))
     grid(out, "rc", sims=sims)
 
 
 # -------------------- МЕНІҢ ТІЗІМІМ --------------------
 
 def page_favs():
-    section(
-        "Менің тізімім",
-        "Таңдаулылар",
-    )
-
-    favs = st.session_state["favs"]
-
-    if not favs:
-        st.info(
-            "Тізім бос. Кітап карточкасындағы "
-            "жүрекшені басып қосыңыз."
-        )
-
-        st.button(
-            "Кітаптарға өту",
-            key="to_books",
-            icon=":material/arrow_forward:",
-            on_click=go,
-            args=("books",),
-        )
+    section("МЕНІҢ КІТАП СӨРЕМ", "My Reading List", "Оқу жоспарыңыз бен оқылған кітаптар бір жерде.")
+    entries = get_reading_entries(st.session_state["user_id"])
+    if not entries:
+        st.info("Тізім бос. Кітап карточкасындағы жүрекшені басып қосыңыз.")
+        st.button("Кітаптарға өту", key="to_books", on_click=go, args=("books",))
         return
-
-    selected = books[
-        books.book_id.isin(favs)
-    ].copy()
-
-    order = {
-        bid: i
-        for i, bid in enumerate(favs)
-    }
-
-    selected["_order"] = selected.book_id.map(order)
-    selected = selected.sort_values("_order")
-
-    grid(selected, "fv")
-
-    st.button(
-        "Осыларға ұқсас кітаптарды көру",
-        key="to_recs",
-        icon=":material/auto_awesome:",
-        on_click=go,
-        args=("recs",),
-        type="primary",
-    )
+    entry_by_id = {entry["book_id"]: entry for entry in entries}
+    counts = {status: sum(entry["status"] == status for entry in entries) for status in READING_STATUSES}
+    cols = st.columns(3)
+    for col, (status, label) in zip(cols, READING_STATUSES.items()):
+        col.metric(label, counts[status])
+    status_filter = st.selectbox("Оқу мәртебесі", ["all", *READING_STATUSES], format_func=lambda value: "Барлығы" if value == "all" else READING_STATUSES[value])
+    ids = [entry["book_id"] for entry in entries if status_filter == "all" or entry["status"] == status_filter]
+    for bid in ids:
+        if bid not in by_id.index:
+            continue
+        row = by_id.loc[bid]
+        with st.container(border=True):
+            image_col, text_col = st.columns([1, 5])
+            with image_col:
+                st.markdown(cover_image_html(BASE_DIR / "covers" / f"{bid}.webp", row.title, row.author, row.genre), unsafe_allow_html=True)
+            with text_col:
+                st.subheader(row.title)
+                st.caption(row.author)
+                widget_key = f"reading_status_{st.session_state['user_id']}_{bid}"
+                current = entry_by_id[bid]["status"]
+                def update_status(book_id=bid, key=widget_key):
+                    set_reading_status(st.session_state["user_id"], book_id, st.session_state[key])
+                st.selectbox("Мәртебе", list(READING_STATUSES), index=list(READING_STATUSES).index(current), format_func=lambda value: READING_STATUSES[value], key=widget_key, on_change=update_status)
+                left, right = st.columns(2)
+                with left:
+                    if st.button("Толығырақ", key=f"reading_details_{bid}"):
+                        show_book(bid)
+                with right:
+                    st.button("Тізімнен алып тастау", key=f"reading_remove_{bid}", on_click=toggle_fav, args=(bid,))
+    if not ids:
+        st.info("Бұл мәртебеде кітап жоқ.")
+    rows = [{"title": by_id.loc[e["book_id"]].title, "author": by_id.loc[e["book_id"]].author, "status": READING_STATUSES[e["status"]], "added_at": e["added_at"]} for e in entries if e["book_id"] in by_id.index]
+    st.download_button("Тізімді CSV ретінде жүктеу", pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"), file_name="my-reading-list.csv", mime="text/csv")
+    st.button("Маған кітап ұсыну", key="to_recs", on_click=go, args=("recs",), type="primary")
 
 
 # -------------------- ІСКЕ ҚОСУ --------------------
