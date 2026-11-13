@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 
-DB_PATH = Path(__file__).parent / "bookrec.db"
+DB_PATH = Path(os.environ.get("BOOKREC_DB_PATH", Path(__file__).parent / "bookrec.db"))
 
 
 def get_database_url():
@@ -35,7 +35,9 @@ def get_connection():
         import psycopg
         conn = psycopg.connect(get_database_url())
     else:
-        conn = sqlite3.connect(DB_PATH)
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.execute("PRAGMA busy_timeout = 30000")
 
     try:
         yield conn
@@ -83,6 +85,26 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+        # Existing favorites remain intact while the reading-status feature is added.
+        if is_postgres():
+            conn.execute("ALTER TABLE reading_list ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'planned'")
+        else:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(reading_list)")}
+            if "status" not in columns:
+                conn.execute("ALTER TABLE reading_list ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS preferences (
+                user_id TEXT NOT NULL,
+                book_id INTEGER NOT NULL,
+                PRIMARY KEY(user_id, book_id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS preference_profiles (
+                user_id TEXT PRIMARY KEY
+            )
+        """)
 
 
 def register_access_code(user_id):
@@ -157,3 +179,53 @@ def get_reading_list(user_id):
         ).fetchall()
 
     return [row[0] for row in rows]
+
+
+READING_STATUSES = {"planned": "Оқимын", "reading": "Оқып жатырмын", "finished": "Оқып бітірдім"}
+
+
+def set_reading_status(user_id, book_id, status):
+    """Update only the current reader's existing reading-list entry."""
+    if status not in READING_STATUSES:
+        raise ValueError("Оқу мәртебесі дұрыс емес")
+    placeholder = "%s" if is_postgres() else "?"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE reading_list SET status = {placeholder} WHERE user_id = {placeholder} AND book_id = {placeholder}",
+            (status, user_id, int(book_id)),
+        )
+
+
+def get_reading_entries(user_id):
+    placeholder = "%s" if is_postgres() else "?"
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT book_id, status, added_at FROM reading_list WHERE user_id = {placeholder} ORDER BY added_at DESC, id DESC",
+            (user_id,),
+        ).fetchall()
+    return [{"book_id": int(bid), "status": status, "added_at": str(added)} for bid, status, added in rows]
+
+
+def save_preferences(user_id, book_ids):
+    """Atomically replace the saved liked books; an empty profile is intentional."""
+    ids = list(dict.fromkeys(int(bid) for bid in book_ids))
+    placeholder = "%s" if is_postgres() else "?"
+    with get_connection() as conn:
+        conn.execute(f"DELETE FROM preferences WHERE user_id = {placeholder}", (user_id,))
+        for bid in ids:
+            conn.execute(f"INSERT INTO preferences (user_id, book_id) VALUES ({placeholder}, {placeholder})", (user_id, bid))
+        conn.execute(
+            f"INSERT INTO preference_profiles (user_id) VALUES ({placeholder}) ON CONFLICT (user_id) DO NOTHING",
+            (user_id,),
+        )
+
+
+def get_preferences(user_id):
+    """None means no profile saved yet; [] means a deliberately cleared profile."""
+    placeholder = "%s" if is_postgres() else "?"
+    with get_connection() as conn:
+        profile = conn.execute(f"SELECT 1 FROM preference_profiles WHERE user_id = {placeholder}", (user_id,)).fetchone()
+        if profile is None:
+            return None
+        rows = conn.execute(f"SELECT book_id FROM preferences WHERE user_id = {placeholder} ORDER BY book_id", (user_id,)).fetchall()
+    return [int(row[0]) for row in rows]

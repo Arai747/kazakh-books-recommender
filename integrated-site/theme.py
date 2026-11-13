@@ -1,6 +1,7 @@
 """BookRec дизайны: CSS, SVG-безендіру және HTML бөлшектері (Streamlit-ке тәуелсіз)."""
 import html
 import base64
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote
 
@@ -60,7 +61,7 @@ HERO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 420">
 <path d="M490 220 L478 170"/><path d="M492 190 L484 130"/><path d="M498 150 L498 90"/>
 </g></svg>"""
 
-HERO_URI = "data:image/svg+xml;utf8," + quote(HERO_SVG, safe="")
+HERO_URI = "data:image/webp;base64," + base64.b64encode((Path(__file__).parent / "assets" / "hero.webp").read_bytes()).decode("ascii")
 
 CSS = """
 <style>
@@ -195,21 +196,27 @@ HERO_HTML = (
 FOOTER_HTML = (
     '<div class="foot"><div class="l"></div><div class="c"><div class="logo">Book<span>Rec</span></div>'
     '<small>ҚАЗАҚ ӘДЕБИЕТІН БІРГЕ ЗЕРТТЕЙІК</small></div><div class="l"></div>'
-    '<div class="r">© 2026 BookRec. Оқу жобасы: деректер мен оқырмандар синтетикалық.</div></div>'
+    '<div class="r">© 2026 BookRec. Қазақ әдебиеті · 270 шығарма.</div></div>'
 )
 
 
+@lru_cache(maxsize=270)
 def cover_image_html(path: Path, title: str, author: str, genre: str) -> str:
-    """Show the generated SVG cover, falling back to the existing design."""
+    """Locally served illustrated cover with selectable, accessible Kazakh text."""
     try:
-        svg = Path(path).read_bytes()
-        encoded = base64.b64encode(svg).decode("ascii")
+        path = Path(path)
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        mime = "image/webp" if path.suffix == ".webp" else "image/svg+xml"
+        title_size = "0.72rem" if len(title) > 40 else "1rem"
         return (
-            '<div class="cover cover-image" style="padding:0">'
-            f'<img src="data:image/svg+xml;base64,{encoded}" '
-            f'alt="{esc(title)} — {esc(author)}" '
+            '<div class="cover cover-image" style="padding:0;position:relative;overflow:hidden">'
+            f'<img src="data:{mime};base64,{encoded}" '
+            f'alt="{esc(title)} — {esc(author)}, көркем мұқаба" '
             'style="display:block;width:100%;height:100%;object-fit:cover">'
-            '</div>'
+            '<div style="position:absolute;inset:0;background:linear-gradient(#172920c9,transparent 65%);padding:10px;text-align:center;color:#fff0d4">'
+            f'<div style="font-size:.5rem;line-height:1.5;margin-bottom:7px">{esc(author)}</div>'
+            f'<div style="font-size:{title_size};font-weight:600;line-height:1.3;text-shadow:0 1px 3px #172920">{esc(title)}</div>'
+            '</div></div>'
         )
     except OSError:
         return cover_html(title, author, genre)
