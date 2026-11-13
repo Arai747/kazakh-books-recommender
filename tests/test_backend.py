@@ -119,6 +119,7 @@ def test_streamlit_end_to_end(storage):
     app.selectbox(key=f"reading_status_{user_id}_1").set_value("finished").run()
     assert storage.get_reading_entries(user_id)[0]["status"] == "finished"
     app.button(key="nav_recs").click().run()
+    assert storage.get_preferences(user_id) == [1]
     app.multiselect(key=f"liked_books_{user_id}").set_value([17]).run()
     assert not app.exception
     assert storage.get_preferences(user_id) == [17]

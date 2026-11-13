@@ -549,6 +549,7 @@ def page_recs():
     selected_key = f"liked_books_{user_id}"
     if selected_key not in st.session_state:
         st.session_state[selected_key] = service.saved_likes(user_id)
+        service.save_likes(user_id, st.session_state[selected_key])
 
     def save_likes():
         service.save_likes(user_id, st.session_state[selected_key])
